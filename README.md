@@ -362,9 +362,9 @@ If you encounter any bugs or issues, please:
 
 <br>
 
-### Made with ❤️ and ☕ by **Oxyg3n**
+### Made with ❤️ and ☕ by **.lucxifvr**
 
-[![GitHub](https://img.shields.io/badge/GitHub-Oxyg3n-181717?style=for-the-badge&logo=github)](https://github.com/apunlegendhai)
+[![GitHub](https://img.shields.io/badge/GitHub-.lucxifvr-181717?style=for-the-badge&logo=github)](https://github.com/apunlegendhai)
 
 *Crafting powerful Discord bots, one commit at a time* ✨
 
