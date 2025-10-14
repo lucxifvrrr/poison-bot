@@ -111,18 +111,13 @@ class GreetingCog(commands.Cog):
                     )
                     return
 
-                # Check existing channels
+                # Check if channel already exists
                 async with self.db.execute(
-                    "SELECT COUNT(*) FROM greeting_channels WHERE guild_id = ?",
-                    (interaction.guild.id,)
+                    "SELECT channel_id FROM greeting_channels WHERE guild_id = ? AND channel_id = ?",
+                    (interaction.guild.id, channel.id)
                 ) as cursor:
-                    count = (await cursor.fetchone())[0]
-                    if count >= 5:
-                        await interaction.response.send_message(
-                            "<:sukoon_info:1323251063910043659> | Maximum limit of 5 greeting channels reached",
-                            ephemeral=True
-                        )
-                        return
+                    existing = await cursor.fetchone()
+                    action = "updated" if existing else "added"
 
                 greeting = custom_message if custom_message else None
                 await self.db.execute(
@@ -138,7 +133,7 @@ class GreetingCog(commands.Cog):
                 await self.db.commit()
 
                 response_message = (
-                    f"<a:sukoon_whitetick:1323992464058482729> | Greetings enabled in {channel.mention}\n"
+                    f"<a:sukoon_whitetick:1323992464058482729> | Greetings {action} for {channel.mention}\n"
                     f"Cooldown: {cooldown} seconds\n"
                 )
                 if greeting:

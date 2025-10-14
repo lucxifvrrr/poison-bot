@@ -3,20 +3,23 @@ from discord.ext import commands, tasks
 from discord import app_commands
 import os
 import asyncio
-import aiosqlite
 import logging
 from typing import Dict, Optional, Set, Tuple
-from contextlib import asynccontextmanager
 import random
 from datetime import datetime
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCollection
+from dotenv import load_dotenv
 
 # Configure logging - errors only
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.ERROR)
 
-# Default database directory and path - use absolute path
-DB_DIR = os.path.join(os.getcwd(), "database")
-DB_PATH = os.path.join(DB_DIR, "vc_roles.db")
+# Load environment variables
+load_dotenv()
+
+class DatabaseError(Exception):
+    """Custom exception for database-related errors."""
+    pass
 
 class VCRoles(commands.Cog):
     """
@@ -30,29 +33,51 @@ class VCRoles(commands.Cog):
         self.operation_lock = asyncio.Lock()
         self.processing_users: Set[int] = set()
         self._ready = False
+        
+        # MongoDB setup
+        self.mongo_uri: str = os.getenv("MONGO_URL", "")
+        self.database_name: str = "discord_bot"
+        self.collection_name: str = "vc_roles"
+        
+        self.db_client: Optional[AsyncIOMotorClient] = None
+        self.db: Optional[AsyncIOMotorDatabase] = None
+        self.collection: Optional[AsyncIOMotorCollection] = None
 
-        # Ensure database directory exists immediately
-        os.makedirs(DB_DIR, exist_ok=True)
+    async def _connect_to_database(self) -> None:
+        """Establish connection to MongoDB."""
+        retries = 3
+        for attempt in range(retries):
+            try:
+                if not self.mongo_uri:
+                    raise DatabaseError("MongoDB URI not found in environment variables")
 
-    @asynccontextmanager
-    async def get_db_connection(self):
-        """Context manager for database connections."""
-        conn = None
-        try:
-            conn = await aiosqlite.connect(DB_PATH)
-            # Enable WAL mode for better concurrent access
-            await conn.execute("PRAGMA journal_mode=WAL")
-            yield conn
-        except Exception as e:
-            logger.error(f"Database connection error: {e}")
-            raise
-        finally:
-            if conn:
-                await conn.close()
+                self.db_client = AsyncIOMotorClient(
+                    self.mongo_uri,
+                    serverSelectionTimeoutMS=5000,
+                    connectTimeoutMS=5000,
+                    retryWrites=True
+                )
+                
+                # Test connection
+                await self.db_client.admin.command('ping')
+                
+                self.db = self.db_client[self.database_name]
+                self.collection = self.db[self.collection_name]
+                
+                print(f"[VCRoles] Successfully connected to MongoDB")
+                print(f"[VCRoles] Using database: {self.database_name}, collection: {self.collection_name}")
+                logger.info("Successfully connected to MongoDB")
+                return
+            except Exception as e:
+                logger.error(f"Database connection attempt {attempt + 1} failed: {e}")
+                if attempt == retries - 1:
+                    raise DatabaseError(f"Failed to connect to MongoDB after {retries} attempts: {e}")
+                await asyncio.sleep(2 ** attempt)
 
     async def cog_load(self) -> None:
         """Initialize database and load configurations when cog is loaded."""
         try:
+            await self._connect_to_database()
             await self._setup_database()
             await self._load_configurations()
             
@@ -63,22 +88,21 @@ class VCRoles(commands.Cog):
                 self.periodic_role_sync.start()
             
             self._ready = True
+            print(f"[VCRoles] Cog loaded successfully and ready!")
         except Exception as e:
             logger.error(f"Failed to load VCRoles cog: {e}", exc_info=True)
+            print(f"[VCRoles] ERROR: Failed to load cog - {e}")
             raise
 
     async def _setup_database(self) -> None:
-        """Initialize the SQLite database connection and tables."""
+        """Initialize MongoDB indexes."""
         try:
-            async with self.get_db_connection() as db:
-                await db.execute('''
-                    CREATE TABLE IF NOT EXISTS vc_roles (
-                        guild_id INTEGER PRIMARY KEY,
-                        role_id INTEGER NOT NULL,
-                        log_channel_id INTEGER
-                    )
-                ''')
-                await db.commit()
+            if self.collection is None:
+                raise DatabaseError("Collection not initialized")
+            
+            # Create index on guild_id for faster queries
+            await self.collection.create_index("guild_id", unique=True)
+            
         except Exception as e:
             logger.error(f"Database setup failed: {e}", exc_info=True)
             raise
@@ -86,46 +110,72 @@ class VCRoles(commands.Cog):
     async def _load_configurations(self) -> None:
         """Load all role configurations from the database."""
         try:
-            async with self.get_db_connection() as db:
-                async with db.execute("SELECT guild_id, role_id, log_channel_id FROM vc_roles") as cursor:
-                    configs = await cursor.fetchall()
-                    self.vc_role_configs.clear()
-                    for guild_id, role_id, log_channel_id in configs:
-                        self.vc_role_configs[guild_id] = (role_id, log_channel_id)
+            if self.collection is None:
+                raise DatabaseError("Collection not initialized")
+            
+            self.vc_role_configs.clear()
+            cursor = self.collection.find({})
+            config_count = 0
+            async for doc in cursor:
+                guild_id = doc.get("guild_id")
+                role_id = doc.get("role_id")
+                log_channel_id = doc.get("log_channel_id")
+                if guild_id and role_id:
+                    self.vc_role_configs[guild_id] = (role_id, log_channel_id)
+                    config_count += 1
+            
+            print(f"[VCRoles] Loaded {config_count} VC role configuration(s) from MongoDB")
+            if config_count > 0:
+                print(f"[VCRoles] Configurations for guild IDs: {list(self.vc_role_configs.keys())}")
         except Exception as e:
             logger.error(f"Failed to load configurations: {e}", exc_info=True)
+            print(f"[VCRoles] ERROR: Failed to load configurations - {e}")
             self.vc_role_configs = {}
 
     async def cog_unload(self) -> None:
-        """Stop background tasks when unloading the cog."""
+        """Stop background tasks and close database connection when unloading the cog."""
         self._ready = False
         if self.check_role_validity.is_running():
             self.check_role_validity.cancel()
         if self.periodic_role_sync.is_running():
             self.periodic_role_sync.cancel()
+        
+        # Close MongoDB connection
+        if self.db_client:
+            self.db_client.close()
 
     async def _save_config(self, guild_id: int, role_id: int, log_channel_id: Optional[int] = None) -> bool:
         """Add or update a configuration in the database."""
         try:
-            async with self.get_db_connection() as db:
-                await db.execute(
-                    "INSERT OR REPLACE INTO vc_roles (guild_id, role_id, log_channel_id) VALUES (?, ?, ?)",
-                    (guild_id, role_id, log_channel_id)
-                )
-                await db.commit()
-                return True
+            if self.collection is None:
+                raise DatabaseError("Collection not initialized")
+            
+            result = await self.collection.update_one(
+                {"guild_id": guild_id},
+                {"$set": {
+                    "guild_id": guild_id,
+                    "role_id": role_id,
+                    "log_channel_id": log_channel_id
+                }},
+                upsert=True
+            )
+            print(f"[VCRoles] Saved config for guild {guild_id}: role_id={role_id}, log_channel_id={log_channel_id}")
+            print(f"[VCRoles] MongoDB operation - matched: {result.matched_count}, modified: {result.modified_count}, upserted: {result.upserted_id}")
+            return True
         except Exception as e:
             logger.error(f"Failed to save config for guild {guild_id}: {e}", exc_info=True)
+            print(f"[VCRoles] ERROR: Failed to save config for guild {guild_id} - {e}")
             return False
 
     async def _delete_config(self, guild_id: int) -> bool:
         """Remove a configuration from the database."""
         try:
-            async with self.get_db_connection() as db:
-                await db.execute("DELETE FROM vc_roles WHERE guild_id = ?", (guild_id,))
-                await db.commit()
-                self.vc_role_configs.pop(guild_id, None)
-                return True
+            if self.collection is None:
+                raise DatabaseError("Collection not initialized")
+            
+            await self.collection.delete_one({"guild_id": guild_id})
+            self.vc_role_configs.pop(guild_id, None)
+            return True
         except Exception as e:
             logger.error(f"Failed to delete config for guild {guild_id}: {e}", exc_info=True)
             return False
@@ -594,13 +644,13 @@ class VCRoles(commands.Cog):
             # Batch delete invalid configurations
             if invalid_guilds:
                 try:
-                    async with self.get_db_connection() as db:
-                        await db.executemany(
-                            "DELETE FROM vc_roles WHERE guild_id = ?",
-                            [(guild_id,) for guild_id in invalid_guilds]
-                        )
-                        await db.commit()
-                        
+                    if self.collection is None:
+                        raise DatabaseError("Collection not initialized")
+                    
+                    await self.collection.delete_many(
+                        {"guild_id": {"$in": invalid_guilds}}
+                    )
+                    
                     for guild_id in invalid_guilds:
                         self.vc_role_configs.pop(guild_id, None)
 
