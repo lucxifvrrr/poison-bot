@@ -10,9 +10,20 @@ from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCollection
 from dotenv import load_dotenv
 
-# Configure logging - errors only
+# Configure logging with file handler
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.ERROR)
+logger.setLevel(logging.INFO)
+
+# Create logs directory if it doesn't exist
+LOGS_DIR = "logs"
+os.makedirs(LOGS_DIR, exist_ok=True)
+
+# Add file handler for VC roles logs
+vc_roles_log_file = os.path.join(LOGS_DIR, "vc_roles.log")
+file_handler = logging.FileHandler(vc_roles_log_file, encoding='utf-8')
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logger.addHandler(file_handler)
 
 # Load environment variables
 load_dotenv()
@@ -64,9 +75,7 @@ class VCRoles(commands.Cog):
                 self.db = self.db_client[self.database_name]
                 self.collection = self.db[self.collection_name]
                 
-                print(f"[VCRoles] Successfully connected to MongoDB")
-                print(f"[VCRoles] Using database: {self.database_name}, collection: {self.collection_name}")
-                logger.info("Successfully connected to MongoDB")
+                logger.info(f"Successfully connected to MongoDB - Database: {self.database_name}, Collection: {self.collection_name}")
                 return
             except Exception as e:
                 logger.error(f"Database connection attempt {attempt + 1} failed: {e}")
@@ -88,10 +97,9 @@ class VCRoles(commands.Cog):
                 self.periodic_role_sync.start()
             
             self._ready = True
-            print(f"[VCRoles] Cog loaded successfully and ready!")
+            logger.info("VCRoles cog loaded successfully and ready")
         except Exception as e:
             logger.error(f"Failed to load VCRoles cog: {e}", exc_info=True)
-            print(f"[VCRoles] ERROR: Failed to load cog - {e}")
             raise
 
     async def _setup_database(self) -> None:
@@ -124,12 +132,11 @@ class VCRoles(commands.Cog):
                     self.vc_role_configs[guild_id] = (role_id, log_channel_id)
                     config_count += 1
             
-            print(f"[VCRoles] Loaded {config_count} VC role configuration(s) from MongoDB")
+            logger.info(f"Loaded {config_count} VC role configuration(s) from MongoDB")
             if config_count > 0:
-                print(f"[VCRoles] Configurations for guild IDs: {list(self.vc_role_configs.keys())}")
+                logger.info(f"Configurations loaded for guild IDs: {list(self.vc_role_configs.keys())}")
         except Exception as e:
             logger.error(f"Failed to load configurations: {e}", exc_info=True)
-            print(f"[VCRoles] ERROR: Failed to load configurations - {e}")
             self.vc_role_configs = {}
 
     async def cog_unload(self) -> None:
@@ -159,12 +166,10 @@ class VCRoles(commands.Cog):
                 }},
                 upsert=True
             )
-            print(f"[VCRoles] Saved config for guild {guild_id}: role_id={role_id}, log_channel_id={log_channel_id}")
-            print(f"[VCRoles] MongoDB operation - matched: {result.matched_count}, modified: {result.modified_count}, upserted: {result.upserted_id}")
+            logger.info(f"Saved config for guild {guild_id}: role_id={role_id}, log_channel_id={log_channel_id} (matched={result.matched_count}, modified={result.modified_count}, upserted={result.upserted_id})")
             return True
         except Exception as e:
             logger.error(f"Failed to save config for guild {guild_id}: {e}", exc_info=True)
-            print(f"[VCRoles] ERROR: Failed to save config for guild {guild_id} - {e}")
             return False
 
     async def _delete_config(self, guild_id: int) -> bool:
