@@ -1,0 +1,15 @@
+{
+    "1419255118561415240": {
+        "embed_channel_id": 1422957793706508328,
+        "ticket_category_id": 1421534988683186176,
+        "verified_role_id": 1422957362553032835,
+        "staff_role_ids": [
+            1423990256692232272
+        ],
+        "moderator_role_id": 1423990256692232272,
+        "log_channel_id": 1420819927194927204,
+        "ticket_message": "Welcome {user}! Please upload your verification selfie following the instructions below.",
+        "decline_message": "Your verification in {server} has been declined.\n\n**Reason:** {reason}\n\nPlease open a new ticket with a proper verification image that meets all requirements.",
+        "staff_role_id": 1423990256692232272
+    }
+}
