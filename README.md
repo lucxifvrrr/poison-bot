@@ -1,6 +1,6 @@
 <div align="center">
 
-![Banner](banner.gif)
+![Banner](template.gif)
 
 # 🤖 Discord Bot - Feature-Rich Server Management
 
@@ -19,58 +19,138 @@
 
 ## 📋 Overview
 
-This is a comprehensive Discord bot built with discord.py, featuring a modular cog-based architecture for easy maintenance and scalability. The bot includes advanced features for server management, user engagement, moderation, and entertainment.
+> **A next-generation Discord bot engineered for excellence**
+
+This is a comprehensive Discord bot built with discord.py, featuring a modular cog-based architecture for easy maintenance and scalability. Designed with performance and reliability in mind, the bot includes advanced features for server management, user engagement, moderation, and entertainment.
+
+### 🎯 Why Choose This Bot?
+
+- 🚀 **High Performance** - Optimized async operations with minimal latency
+- 🔧 **Modular Design** - 25+ independent cogs for maximum flexibility
+- 🛡️ **Production Ready** - Built-in error handling and logging
+- 🎨 **Highly Customizable** - Easy configuration for your server's needs
+- 📊 **Resource Efficient** - Automatic memory management and cleanup
 
 ## ✨ Features
 
 ### 🛡️ Moderation & Management
-- **Verification System** - Secure member verification with customizable workflows
-- **Auto Moderation** - Automated content filtering and rule enforcement
-- **Purge Commands** - Bulk message deletion with advanced filters
-- **Ban Management** - Enhanced ban/unban functionality with logging
+
+<table>
+<tr>
+<td width="50%">
+
+- 🔐 **Verification System** - Secure member verification with customizable workflows
+- 🤖 **Auto Moderation** - Automated content filtering and rule enforcement
+
+</td>
+<td width="50%">
+
+- 🗑️ **Purge Commands** - Bulk message deletion with advanced filters
+- 🔨 **Ban Management** - Enhanced ban/unban functionality with logging
+
+</td>
+</tr>
+</table>
 
 ### 👥 User Engagement
-- **AFK System** - Automatic AFK status tracking with custom messages
-- **Confession System** - Anonymous confession channel management
-- **Auto Responder** - Custom automated responses to keywords
-- **Sticky Messages** - Pin important messages that stay visible
-- **Snipe Commands** - Recover recently deleted/edited messages
+
+<table>
+<tr>
+<td width="50%">
+
+- 💤 **AFK System** - Automatic AFK status tracking with custom messages
+- 🤫 **Confession System** - Anonymous confession channel management
+- 🤖 **Auto Responder** - Custom automated responses to keywords
+
+</td>
+<td width="50%">
+
+- 📌 **Sticky Messages** - Pin important messages that stay visible
+- 🔍 **Snipe Commands** - Recover recently deleted/edited messages
+
+</td>
+</tr>
+</table>
 
 ### 🎮 Entertainment & Games
-- **Match Making** - Advanced matchmaking system for gaming
-- **Giveaways** - Feature-rich giveaway management
-- **Drops** - Random reward drops for active members
-- **Bulk Ping** - Mass mention system with cooldowns
+
+<table>
+<tr>
+<td width="50%">
+
+- 🎯 **Match Making** - Advanced matchmaking system for gaming
+- 🎁 **Giveaways** - Feature-rich giveaway management
+
+</td>
+<td width="50%">
+
+- 💎 **Drops** - Random reward drops for active members
+- 📢 **Bulk Ping** - Mass mention system with cooldowns
+
+</td>
+</tr>
+</table>
 
 ### 🎤 Voice Channel Features
-- **VC Manager** - Dynamic voice channel creation and management
-- **VC Roles** - Automatic role assignment based on VC activity
-- **Always VC** - Persistent voice channel monitoring
-- **Drag Me** - Voice channel movement commands
+
+<table>
+<tr>
+<td width="50%">
+
+- 🎙️ **VC Manager** - Dynamic voice channel creation and management
+- 🎭 **VC Roles** - Automatic role assignment based on VC activity
+
+</td>
+<td width="50%">
+
+- 🔊 **Always VC** - Persistent voice channel monitoring
+- 🎵 **Drag Me** - Voice channel movement commands
+
+</td>
+</tr>
+</table>
 
 ### 🎨 Utility & Customization
-- **Avatar Commands** - Display and manipulate user avatars
-- **Status Changer** - Dynamic bot status rotation
-- **Translation** - Multi-language translation support
-- **Media Commands** - Image and media manipulation
-- **Thread Management** - Advanced thread creation and control
-- **Info Commands** - Server and user information display
-- **Stats Tracking** - Comprehensive server statistics
-- **Steal Emojis** - Copy emojis from other servers
-- **Greeting System** - Welcome and goodbye messages
-- **Request Role** - User-initiated role requests
+
+<table>
+<tr>
+<td width="50%">
+
+- 🖼️ **Avatar Commands** - Display and manipulate user avatars
+- 🌟 **Status Changer** - Dynamic bot status rotation
+- 🌐 **Translation** - Multi-language translation support
+- 📸 **Media Commands** - Image and media manipulation
+- 🧵 **Thread Management** - Advanced thread creation and control
+
+</td>
+<td width="50%">
+
+- ℹ️ **Info Commands** - Server and user information display
+- 📊 **Stats Tracking** - Comprehensive server statistics
+- 😎 **Steal Emojis** - Copy emojis from other servers
+- 👋 **Greeting System** - Welcome and goodbye messages
+- 🎫 **Request Role** - User-initiated role requests
+
+</td>
+</tr>
+</table>
 
 ## 🚀 Installation
 
 ### Prerequisites
-- Python 3.8 or higher
-- pip (Python package manager)
-- A Discord Bot Token ([Get one here](https://discord.com/developers/applications))
+
+```diff
++ Python 3.8 or higher
++ pip (Python package manager)
++ A Discord Bot Token
+```
+
+> 💡 **Get your Discord Bot Token** at [Discord Developer Portal](https://discord.com/developers/applications)
 
 ### Step 1: Clone the Repository
 ```bash
-git clone https://github.com/yourusername/yourrepo.git
-cd yourrepo
+git clone https://github.com/apunlegendhai/New-folder--2-.git
+cd New-folder--2-
 ```
 
 ### Step 2: Install Dependencies
@@ -135,19 +215,34 @@ The bot includes numerous slash commands across all cogs. Use `/` in Discord to 
 ## 🏗️ Architecture
 
 ### Modular Cog System
-The bot uses a modular architecture where each feature is implemented as a separate cog. This allows for:
-- Easy feature addition/removal
-- Independent testing and debugging
-- Clean code organization
-- Hot-reloading capabilities
 
-### Key Features
-- **Global Cooldown System** - Prevents command spam
-- **Duplicate Response Prevention** - Avoids double responses
-- **Automatic Error Reporting** - Webhook-based error notifications
-- **Graceful Shutdown** - Proper cleanup on exit
-- **Periodic Resource Cleanup** - Memory management
-- **Rotating Log Files** - Automatic log rotation
+```mermaid
+graph LR
+    A[Main Bot] --> B[Cog Loader]
+    B --> C[Moderation]
+    B --> D[Engagement]
+    B --> E[Entertainment]
+    B --> F[Voice]
+    B --> G[Utility]
+```
+
+The bot uses a modular architecture where each feature is implemented as a separate cog. This allows for:
+
+- ✅ Easy feature addition/removal
+- ✅ Independent testing and debugging
+- ✅ Clean code organization
+- ✅ Hot-reloading capabilities
+
+### 🔑 Key Features
+
+| Feature | Description |
+|---------|-------------|
+| ⏱️ **Global Cooldown System** | Prevents command spam with intelligent rate limiting |
+| 🚫 **Duplicate Response Prevention** | Avoids double responses with tracking system |
+| 📡 **Automatic Error Reporting** | Webhook-based error notifications for monitoring |
+| 🛑 **Graceful Shutdown** | Proper cleanup on exit with signal handlers |
+| 🧹 **Periodic Resource Cleanup** | Automatic memory management every 5 minutes |
+| 📝 **Rotating Log Files** | Automatic log rotation with 7-day retention |
 
 ## 🛠️ Development
 
@@ -180,13 +275,35 @@ async def setup(bot):
 
 ## 🤝 Contributing
 
+<div align="center">
+
+### We Love Contributions! 💖
+
+</div>
+
 Contributions are welcome! Please follow these steps:
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+```bash
+# 1. Fork the repository
+# 2. Create a feature branch
+git checkout -b feature/AmazingFeature
+
+# 3. Commit your changes
+git commit -m 'Add some AmazingFeature'
+
+# 4. Push to the branch
+git push origin feature/AmazingFeature
+
+# 5. Open a Pull Request
+```
+
+### 📋 Contribution Guidelines
+
+- 🐛 Report bugs with detailed reproduction steps
+- 💡 Suggest features with clear use cases
+- 📝 Update documentation for any changes
+- ✅ Ensure code follows existing style patterns
+- 🧪 Test your changes thoroughly
 
 ## 📜 License
 
@@ -201,23 +318,54 @@ If you encounter any bugs or issues, please:
 
 ## 💡 Support
 
-Need help? Here's how to get support:
-- 📖 Check the documentation
-- 🐛 Open an issue on GitHub
-- 💬 Join our Discord server (if applicable)
+<div align="center">
+
+### Need Help? We're Here! 🙋‍♂️
+
+</div>
+
+| Method | Link |
+|--------|------|
+| 📖 **Documentation** | Check the README and code comments |
+| 🐛 **Bug Reports** | [Open an Issue](https://github.com/apunlegendhai/New-folder--2-/issues) |
 
 ## 🙏 Acknowledgments
 
-- Built with [discord.py](https://github.com/Rapptz/discord.py)
-- Uses [aiohttp](https://github.com/aio-libs/aiohttp) for async HTTP requests
-- Powered by Python 3.8+
+<div align="center">
+
+### Built With Amazing Technologies 🚀
+
+[![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Discord.py](https://img.shields.io/badge/Discord.py-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://github.com/Rapptz/discord.py)
+[![aiohttp](https://img.shields.io/badge/aiohttp-2C5BB4?style=for-the-badge&logo=aiohttp&logoColor=white)](https://github.com/aio-libs/aiohttp)
+
+</div>
+
+- 🐍 **Python 3.8+** - Modern async/await syntax
+- 🤖 **discord.py** - Powerful Discord API wrapper
+- 🌐 **aiohttp** - Async HTTP client/server framework
+- 🎨 **Pillow** - Image processing capabilities
+- 🗄️ **aiosqlite & motor** - Async database operations
+- 🌍 **deep-translator** - Multi-language support
 
 ---
 
 <div align="center">
 
-**⭐ Star this repository if you find it helpful!**
+### ⭐ Star this repository if you find it helpful! ⭐
 
-Made with ❤️ by [Your Name]
+<br>
+
+![GitHub stars](https://img.shields.io/github/stars/apunlegendhai/New-folder--2-?style=social)
+![GitHub forks](https://img.shields.io/github/forks/apunlegendhai/New-folder--2-?style=social)
+![GitHub watchers](https://img.shields.io/github/watchers/apunlegendhai/New-folder--2-?style=social)
+
+<br>
+
+### Made with ❤️ and ☕ by **Oxyg3n**
+
+[![GitHub](https://img.shields.io/badge/GitHub-Oxyg3n-181717?style=for-the-badge&logo=github)](https://github.com/apunlegendhai)
+
+*Crafting powerful Discord bots, one commit at a time* ✨
 
 </div>
