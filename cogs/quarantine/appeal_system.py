@@ -469,33 +469,28 @@ class AppealSystem(commands.Cog):
             reviewer = await self.bot.fetch_user(reviewer_id)
             
             if status == AppealStatus.APPROVED:
-                embed = discord.Embed(
-                    title="✅ Appeal Approved",
-                    description=f"Your appeal for Case #{appeal['case_id']} has been **approved**!",
-                    color=Colors.SUCCESS,
-                    timestamp=utc_now()
+                dm_text = (
+                    f"✅ **Appeal Approved**\n\n"
+                    f"Your appeal for Case #{appeal['case_id']} has been **approved**!\n\n"
+                    f"🎉 **Result:** Your punishment has been lifted.\n"
+                    f"🏢 **Server:** {guild.name}\n"
+                    f"📋 **Appeal ID:** #{appeal['appeal_id']}\n"
+                    f"🛡️ **Reviewed By:** {reviewer}\n\n"
+                    f"_Reviewed at {utc_now().strftime('%Y-%m-%d %H:%M UTC')}_"
                 )
-                embed.add_field(name="🎉 Result", value="Your punishment has been lifted.", inline=False)
             else:
-                embed = discord.Embed(
-                    title="❌ Appeal Denied",
-                    description=f"Your appeal for Case #{appeal['case_id']} has been **denied**.",
-                    color=Colors.ERROR,
-                    timestamp=utc_now()
+                dm_text = (
+                    f"❌ **Appeal Denied**\n\n"
+                    f"Your appeal for Case #{appeal['case_id']} has been **denied**.\n\n"
+                    f"📋 **Note:** Your punishment remains in effect. You may submit another appeal after the cooldown period.\n"
+                    f"🏢 **Server:** {guild.name}\n"
+                    f"📋 **Appeal ID:** #{appeal['appeal_id']}\n"
+                    f"🛡️ **Reviewed By:** {reviewer}\n\n"
+                    f"_Reviewed at {utc_now().strftime('%Y-%m-%d %H:%M UTC')}_"
                 )
-                embed.add_field(
-                    name="📋 Note",
-                    value="Your punishment remains in effect. You may submit another appeal after the cooldown period.",
-                    inline=False
-                )
-            
-            embed.add_field(name="🏢 Server", value=guild.name, inline=True)
-            embed.add_field(name="📋 Appeal ID", value=f"#{appeal['appeal_id']}", inline=True)
-            embed.add_field(name="🛡️ Reviewed By", value=f"{reviewer}", inline=True)
-            embed.set_footer(text=f"Reviewed at {utc_now().strftime('%Y-%m-%d %H:%M UTC')}")
             
             dm = await user.create_dm()
-            await dm.send(embed=embed)
+            await dm.send(content=dm_text)
         except Exception as e:
             self._log(f"Failed to notify user: {e}")
     
@@ -561,38 +556,60 @@ class AppealSystem(commands.Cog):
         return embed
     
     @app_commands.command(name="appeal", description="Submit an appeal for your mute/punishment")
-    @app_commands.describe(case_id="The case ID you want to appeal")
-    async def appeal_command(self, interaction: discord.Interaction, case_id: int):
+    @app_commands.describe(case_id="The case ID you want to appeal (optional - auto-detects your active case)")
+    async def appeal_command(self, interaction: discord.Interaction, case_id: Optional[int] = None):
         """Submit an appeal for a punishment."""
-        if case_id <= 0:
-            await interaction.response.send_message("❌ Invalid case ID.", ephemeral=True)
-            return
-        
-        case = mutes_col.find_one({
-            "guild_id": interaction.guild.id,
-            "case_id": case_id
-        })
-        
-        if not case:
-            await interaction.response.send_message(
-                f"❌ Case #{case_id} not found.",
-                ephemeral=True
+        # Auto-detect case ID if not provided
+        if case_id is None:
+            # Find the user's most recent active case
+            case = mutes_col.find_one(
+                {
+                    "guild_id": interaction.guild.id,
+                    "user_id": interaction.user.id,
+                    "active": True
+                },
+                sort=[("muted_at", -1)]
             )
-            return
-        
-        if case["user_id"] != interaction.user.id:
-            await interaction.response.send_message(
-                "❌ You can only appeal your own cases.",
-                ephemeral=True
-            )
-            return
-        
-        if not case.get("active", False):
-            await interaction.response.send_message(
-                "❌ This case is no longer active.",
-                ephemeral=True
-            )
-            return
+            
+            if not case:
+                await interaction.response.send_message(
+                    "❌ You don't have any active mute cases in this server.",
+                    ephemeral=True
+                )
+                return
+            
+            case_id = case["case_id"]
+        else:
+            # Validate provided case ID
+            if case_id <= 0:
+                await interaction.response.send_message("❌ Invalid case ID.", ephemeral=True)
+                return
+            
+            case = mutes_col.find_one({
+                "guild_id": interaction.guild.id,
+                "case_id": case_id
+            })
+            
+            if not case:
+                await interaction.response.send_message(
+                    f"❌ Case #{case_id} not found.",
+                    ephemeral=True
+                )
+                return
+            
+            if case["user_id"] != interaction.user.id:
+                await interaction.response.send_message(
+                    "❌ You can only appeal your own cases.",
+                    ephemeral=True
+                )
+                return
+            
+            if not case.get("active", False):
+                await interaction.response.send_message(
+                    "❌ This case is no longer active.",
+                    ephemeral=True
+                )
+                return
         
         can_submit, error_msg = await self._can_submit_appeal(
             interaction.guild.id,

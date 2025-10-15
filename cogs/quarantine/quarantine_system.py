@@ -71,6 +71,48 @@ def parse_duration(s: str) -> Optional[timedelta]:
 def utc_now():
     return datetime.now(timezone.utc)
 
+
+class AppealButton(discord.ui.View):
+    """Button view for appealing a mute from DM."""
+    
+    def __init__(self, guild_id: int, case_id: int):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.case_id = case_id
+    
+    @discord.ui.button(label="Submit Appeal", style=discord.ButtonStyle.primary, emoji="📝")
+    async def appeal_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Handle appeal button click."""
+        # Import here to avoid circular import
+        from .appeal_system import AppealModal
+        
+        # Get the appeal system cog
+        appeal_cog = interaction.client.get_cog("AppealSystem")
+        if not appeal_cog:
+            await interaction.response.send_message(
+                "❌ Appeal system is not available. Please contact a moderator.",
+                ephemeral=True
+            )
+            return
+        
+        # Check if user can submit appeal
+        can_submit, error_msg = await appeal_cog._can_submit_appeal(
+            self.guild_id,
+            interaction.user.id
+        )
+        
+        if not can_submit:
+            await interaction.response.send_message(
+                f"❌ {error_msg}",
+                ephemeral=True
+            )
+            return
+        
+        # Show the appeal modal
+        modal = AppealModal(appeal_cog, self.case_id)
+        await interaction.response.send_modal(modal)
+
+
 class ImprovedMuteCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -278,7 +320,7 @@ class ImprovedMuteCog(commands.Cog):
     # ---------------------------
     # Slash commands: setup, check, reset, reapply
     # ---------------------------
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.command(name="setup-mute", description="Create Muted role, jail, and punishment-logs channel.")
     @app_commands.describe(category="Category to place punishment-logs (optional)")
     async def setup_mute(self, interaction: discord.Interaction, category: Optional[discord.CategoryChannel] = None):
@@ -356,7 +398,7 @@ class ImprovedMuteCog(commands.Cog):
             if self.logger:
                 self.logger.exception("setup-mute failed", exc_info=e)
 
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.command(name="check-muteperms", description="Check if mute role and permissions are correct.")
     async def check_muteperms(self, interaction: discord.Interaction):
         guild = interaction.guild
@@ -412,7 +454,7 @@ class ImprovedMuteCog(commands.Cog):
             embed.set_footer(text="Your mute system is ready to use!")
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.command(name="reset-muteconfig", description="Reset mute configuration (admin only).")
     @app_commands.describe(confirm="Type CONFIRM to actually reset")
     async def reset_muteconfig(self, interaction: discord.Interaction, confirm: Optional[str] = None):
@@ -437,7 +479,7 @@ class ImprovedMuteCog(commands.Cog):
         embed.set_footer(text=f"Reset by {interaction.user}", icon_url=interaction.user.display_avatar.url)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.command(name="reapply-mute-perms", description="Reapply Muted role overwrites across the server.")
     async def reapply_mute_perms(self, interaction: discord.Interaction):
         guild = interaction.guild
@@ -623,25 +665,30 @@ class ImprovedMuteCog(commands.Cog):
         if not silent:
             try:
                 dm = await member.create_dm()
-                dm_embed = discord.Embed(
-                    title="🔇 You Have Been Muted",
-                    description=f"You have been muted in **{guild.name}**",
-                    color=0xFF6B6B,
-                    timestamp=utc_now()
-                )
-                dm_embed.add_field(name="🛡️ Moderator", value=f"{ctx.author}", inline=True)
-                dm_embed.add_field(name="📋 Case ID", value=f"#{case}", inline=True)
-                dm_embed.add_field(name="📋 Reason", value=f"```{reason[:1000]}```", inline=False)
+                
+                # Build expiry text
                 if expires_at:
                     try:
                         timestamp = int(expires_at.timestamp())
-                        dm_embed.add_field(name="⏰ Duration", value=f"Expires <t:{timestamp}:R>", inline=False)
+                        expiry_text = f"<t:{timestamp}:R>"
                     except (AttributeError, ValueError, OSError):
-                        dm_embed.add_field(name="⏰ Duration", value="Until manually unmuted", inline=False)
+                        expiry_text = "Manual unmute"
                 else:
-                    dm_embed.add_field(name="⏰ Duration", value="Until manually unmuted", inline=False)
-                dm_embed.set_footer(text="This message will be automatically deleted in 10 minutes")
-                dm_msg = await dm.send(embed=dm_embed)
+                    expiry_text = "Manual unmute"
+                
+                # Create simple text message
+                dm_text = (
+                    f"🔇 **You've been muted in {guild.name}**\n\n"
+                    f"📋 **Case:** #{case}\n"
+                    f"⏰ **Expires:** {expiry_text}\n"
+                    f"📝 **Reason:** {reason[:200] if len(reason) <= 200 else f'{reason[:197]}...'}\n\n"
+                    f"_Click the button below to submit an appeal • This message auto-deletes in 10 minutes_"
+                )
+                
+                # Create appeal button view
+                view = AppealButton(guild.id, case)
+                dm_msg = await dm.send(content=dm_text, view=view)
+                
                 # persist deletion: schedule delete in 10 minutes
                 expires = utc_now() + timedelta(minutes=10)
                 ins = pending_dm_deletes.insert_one({
@@ -819,16 +866,12 @@ class ImprovedMuteCog(commands.Cog):
         # DM user quietly
         try:
             dm = await member.create_dm()
-            dm_embed = discord.Embed(
-                title="🔊 You Have Been Unmuted",
-                description=f"You have been unmuted in **{guild.name}**",
-                color=0x51CF66,
-                timestamp=utc_now()
+            dm_text = (
+                f"🔊 **You've been unmuted in {guild.name}**\n\n"
+                f"📋 **Case:** #{case}\n\n"
+                f"_You can now access all server channels again_"
             )
-            dm_embed.add_field(name="🛡️ Moderator", value=f"{ctx.author}", inline=True)
-            dm_embed.add_field(name="📋 Case ID", value=f"#{case}", inline=True)
-            dm_embed.set_footer(text="You can now access all server channels again")
-            await dm.send(embed=dm_embed)
+            await dm.send(content=dm_text)
         except Exception:
             pass
 
