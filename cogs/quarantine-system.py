@@ -329,7 +329,7 @@ class ImprovedMuteCog(commands.Cog):
         guild_configs.update_one({"guild_id": ctx.guild.id}, {"$set": {"mod_role_id": role.id}}, upsert=True)
         await ctx.send(f"Moderator role set to {role.mention}.")
 
-    @commands.command(name="qmute")
+    @commands.command(name="qmute", aliases=["mute"])
     @commands.guild_only()
     async def qmute(self, ctx: commands.Context, member: discord.Member, *args):
         """
@@ -365,18 +365,18 @@ class ImprovedMuteCog(commands.Cog):
             silent = True
             args_list = args_list[1:]
 
-        if not args_list:
-            return await ctx.send("Usage: `!qmute @user [--silent] [duration] <reason...>`")
-
-        # optional duration
-        first = args_list[0]
-        dur = parse_duration(first)
+        # optional duration and reason
         expires_at = None
-        if dur:
-            reason = " ".join(args_list[1:]) if len(args_list) > 1 else "No reason provided"
-            expires_at = utc_now() + dur
-        else:
-            reason = " ".join(args_list) if args_list else "No reason provided"
+        reason = "No reason provided"
+        
+        if args_list:
+            first = args_list[0]
+            dur = parse_duration(first)
+            if dur:
+                reason = " ".join(args_list[1:]) if len(args_list) > 1 else "No reason provided"
+                expires_at = utc_now() + dur
+            else:
+                reason = " ".join(args_list)
 
         # safety
         can_manage, why = await self._can_manage_member(guild, member)
@@ -470,7 +470,7 @@ class ImprovedMuteCog(commands.Cog):
 
         await ctx.send(f"{member.mention} has been muted. Case #{case}. Moved to {jail_ch.mention}")
 
-    @commands.command(name="qunmute")
+    @commands.command(name="qunmute", aliases=["unmute"])
     @commands.guild_only()
     async def qunmute(self, ctx: commands.Context, member: discord.Member):
         guild = ctx.guild

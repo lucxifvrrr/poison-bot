@@ -364,15 +364,15 @@ class VoiceManager(commands.Cog):
                 snippet = "\n".join(errs[:5]) + (f"\n…(+{len(errs)-5} more)" if len(errs)>5 else "")
                 await ctx.send(f"<a:sukoon_reddot:1322894157794119732> Issues:\n{snippet}")
 
-    @commands.command(name="mute")
+    @commands.command(name="vcmute")
     @commands.guild_only()
     @commands.cooldown(1, 5, commands.BucketType.user)
-    async def mute(self, ctx: commands.Context, confirm: str):
+    async def vcmute(self, ctx: commands.Context, confirm: str):
         """
-        Mute everyone in your voice channel (except you/bots). Confirm: `mute all`
+        Mute everyone in your voice channel (except you/bots). Confirm: `vcmute all`
         """
         if confirm.lower() != "all":
-            return await ctx.send("<a:sukoon_reddot:1322894157794119732> To confirm, type: `mute all`")
+            return await ctx.send("<a:sukoon_reddot:1322894157794119732> To confirm, type: `vcmute all`")
 
         if not await self.check_admin_and_move_perms(ctx):
             return
@@ -402,15 +402,15 @@ class VoiceManager(commands.Cog):
                 snippet = "\n".join(errs[:5]) + (f"\n…(+{len(errs)-5} more)" if len(errs)>5 else "")
                 await ctx.send(f"<a:sukoon_reddot:1322894157794119732> Issues:\n{snippet}")
 
-    @commands.command(name="unmute")
+    @commands.command(name="vcunmute")
     @commands.guild_only()
     @commands.cooldown(1, 5, commands.BucketType.user)
-    async def unmute(self, ctx: commands.Context, confirm: str):
+    async def vcunmute(self, ctx: commands.Context, confirm: str):
         """
-        Unmute everyone in your voice channel. Confirm: `unmute all`
+        Unmute everyone in your voice channel. Confirm: `vcunmute all`
         """
         if confirm.lower() != "all":
-            return await ctx.send("<a:sukoon_reddot:1322894157794119732> To confirm, type: `unmute all`")
+            return await ctx.send("<a:sukoon_reddot:1322894157794119732> To confirm, type: `vcunmute all`")
 
         if not await self.check_admin_and_move_perms(ctx):
             return
