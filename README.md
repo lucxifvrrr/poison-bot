@@ -41,12 +41,16 @@ This is a comprehensive Discord bot built with discord.py, featuring a modular c
 
 - 🔐 **Verification System** - Secure member verification with customizable workflows
 - 🤖 **Auto Moderation** - Automated content filtering and rule enforcement
+- 🔇 **Quarantine System** - Advanced mute system with jail channel and case tracking
+- 📨 **Appeal System** - Modern appeal workflow with Discord modals and buttons
 
 </td>
 <td width="50%">
 
 - 🗑️ **Purge Commands** - Bulk message deletion with advanced filters
 - 🔨 **Ban Management** - Enhanced ban/unban functionality with logging
+- ⏰ **Temporary Mutes** - Time-based mutes with auto-unmute functionality
+- 📋 **Case Management** - Track and review moderation cases with appeal integration
 
 </td>
 </tr>
@@ -163,12 +167,23 @@ Create a `.env` file in the root directory:
 ```env
 DISCORD_TOKEN=your_discord_bot_token_here
 WEBHOOK_URL=your_webhook_url_here
+MONGO_URL=mongodb://localhost:27017/  # For quarantine/appeal system
 ```
 
 ### Step 4: Run the Bot
 ```bash
 python main.py
 ```
+
+### Step 5: Setup Quarantine System (Optional)
+If you want to use the quarantine and appeal system:
+
+1. **In Discord**, run `/setup-mute` to initialize the system
+2. Run `!setmodrole @YourModRole` to set the moderator role
+3. The system will create:
+   - 🔇 **Muted** role
+   - 🔒 **jail** channel (for muted users)
+   - 📝 **punishment-logs** channel (for moderation logs)
 
 ## ⚙️ Configuration
 
@@ -177,6 +192,9 @@ python main.py
 |----------|-------------|----------|
 | `DISCORD_TOKEN` | Your Discord bot token | ✅ Yes |
 | `WEBHOOK_URL` | Webhook URL for error reporting | ✅ Yes |
+| `MONGO_URL` | MongoDB connection URL for quarantine/appeal system | ✅ Yes* |
+
+*Required only if using the quarantine/appeal system
 
 ### Bot Intents
 The bot requires the following intents:
@@ -188,6 +206,11 @@ The bot requires the following intents:
 ```
 ├── cogs/              # Bot command modules
 │   ├── giveaways/    # Giveaway system
+│   ├── quarantine/   # Quarantine & Appeal system
+│   │   ├── quarantine_system.py  # Mute/jail management
+│   │   ├── appeal_system.py      # Appeal workflow
+│   │   ├── config.py              # System configuration
+│   │   └── README.md              # Detailed documentation
 │   └── *.py          # Individual cog files
 ├── logs/              # Auto-generated log files
 ├── database/          # Database storage
@@ -206,11 +229,35 @@ The bot requires the following intents:
 The bot includes numerous slash commands across all cogs. Use `/` in Discord to see all available commands with descriptions.
 
 ### Command Categories
-- **Moderation**: Ban, kick, purge, verification
+- **Moderation**: Ban, kick, purge, verification, quarantine, appeals
 - **Utility**: Avatar, info, stats, translate
 - **Fun**: Confess, drops, giveaways
 - **Voice**: VC management, roles, drag
 - **Engagement**: AFK, auto-responder, sticky messages
+
+### Featured: Quarantine & Appeal System
+The bot includes a comprehensive quarantine system with an integrated appeal workflow:
+
+**Setup Commands:**
+- `/setup-mute` - Initialize the quarantine system (creates roles and channels)
+- `!setmodrole <role>` - Set the moderator role
+
+**Moderation Commands:**
+- `!qmute <user> [duration] [reason]` - Mute a user (e.g., `!qmute @user 1h spam`)
+- `!qunmute <user>` - Unmute a user
+- `!mutelist` - View all currently muted members
+- `!case <case_id>` - View details of a specific case
+- `!jailhistory <user>` - View messages from muted user
+
+**User Commands:**
+- `/appeal <case_id>` - Submit an appeal using a modern modal interface
+- `/appeal-status [appeal_id]` - Check your appeal status
+
+**Moderator Commands:**
+- `/appeal-list` - View all pending appeals
+- `/appeal-review <appeal_id>` - Review appeal with interactive buttons
+
+> 📖 For detailed documentation, see `cogs/quarantine/README.md`
 
 ## 🏗️ Architecture
 
@@ -345,6 +392,7 @@ If you encounter any bugs or issues, please:
 - 🤖 **discord.py** - Powerful Discord API wrapper
 - 🌐 **aiohttp** - Async HTTP client/server framework
 - 🎨 **Pillow** - Image processing capabilities
+- 🗄️ **MongoDB & PyMongo** - Database for quarantine/appeal system
 - 🗄️ **aiosqlite & motor** - Async database operations
 - 🌍 **deep-translator** - Multi-language support
 
