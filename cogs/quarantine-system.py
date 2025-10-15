@@ -13,16 +13,23 @@ import re
 from pymongo import MongoClient, ASCENDING, ReturnDocument
 from pymongo.errors import PyMongoError
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
-from typing import Optional, List
+from datetime import datetime, timedelta, timezone
+from typing import Optional, List, Tuple
 
 load_dotenv()
 MONGO_URL = os.getenv("MONGO_URL")
 if not MONGO_URL:
     raise RuntimeError("MONGO_URL missing from environment (.env)")
 
-# Connect to MongoDB
-mongo = MongoClient(MONGO_URL)
+# Connect to MongoDB with proper connection pooling
+mongo = MongoClient(
+    MONGO_URL,
+    maxPoolSize=50,
+    minPoolSize=10,
+    serverSelectionTimeoutMS=5000,
+    connectTimeoutMS=10000,
+    socketTimeoutMS=10000
+)
 db = mongo.get_database("discord_mute_system")
 
 guild_configs = db.guild_configs
@@ -59,7 +66,7 @@ def parse_duration(s: str) -> Optional[timedelta]:
     return None
 
 def utc_now():
-    return datetime.utcnow()
+    return datetime.now(timezone.utc)
 
 class ImprovedMuteCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -189,7 +196,7 @@ class ImprovedMuteCog(commands.Cog):
                 failed.append(ch.name)
         return failed
 
-    async def _can_manage_member(self, guild: discord.Guild, target: discord.Member) -> (bool, Optional[str]):
+    async def _can_manage_member(self, guild: discord.Guild, target: discord.Member) -> Tuple[bool, Optional[str]]:
         me = guild.me
         if not me.guild_permissions.manage_roles:
             return False, "Bot lacks Manage Roles permission."
@@ -676,22 +683,30 @@ class ImprovedMuteCog(commands.Cog):
                                 await member.remove_roles(muted_role, reason="Temporary mute expired")
                             except Exception:
                                 pass
-                        mutes_col.update_one({"_id": doc["_id"]}, {"$set": {"active": False, "unmuted_at": utc_now(), "unmuted_by_id": None}})
-                        # log
-                        case_id = doc.get("case_id", "N/A")
-                        if log_ch:
-                            embed = discord.Embed(title=f"Member Unmuted (auto) — Case #{case_id}", color=discord.Color.green(), timestamp=utc_now())
-                            uid = doc.get("user_id")
-                            embed.add_field(name="Member", value=f"<@{uid}>", inline=False)
-                            embed.add_field(name="Reason", value="Temporary mute expired", inline=False)
-                            try:
-                                await log_ch.send(embed=embed)
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
+                        # Use atomic update to prevent race conditions
+                        result = mutes_col.update_one(
+                            {"_id": doc["_id"], "active": True},  # Only update if still active
+                            {"$set": {"active": False, "unmuted_at": utc_now(), "unmuted_by_id": None}}
+                        )
+                        # Only log if we actually updated (not already unmuted by someone else)
+                        if result.modified_count > 0:
+                            case_id = doc.get("case_id", "N/A")
+                            if log_ch:
+                                embed = discord.Embed(title=f"Member Unmuted (auto) — Case #{case_id}", color=discord.Color.green(), timestamp=utc_now())
+                                uid = doc.get("user_id")
+                                embed.add_field(name="Member", value=f"<@{uid}>", inline=False)
+                                embed.add_field(name="Reason", value="Temporary mute expired", inline=False)
+                                try:
+                                    await log_ch.send(embed=embed)
+                                except Exception:
+                                    pass
+                    except Exception as e:
+                        if self.logger:
+                            self.logger.error(f"Error in auto-unmute for doc {doc.get('_id')}: {e}")
                 await asyncio.sleep(20)
-            except Exception:
+            except Exception as e:
+                if self.logger:
+                    self.logger.error(f"Error in auto-unmute loop: {e}")
                 await asyncio.sleep(10)
 
     # ---------------------------
@@ -727,7 +742,7 @@ class ImprovedMuteCog(commands.Cog):
         except Exception:
             pass
         # enforce no mentions
-        has_mentions = bool(message.mentions or message.role_mentions or "@everyone" in message.content or "@here" in message.content)
+        has_mentions = bool(message.mentions or message.role_mentions or message.mention_everyone)
         if has_mentions:
             try:
                 await message.delete()
@@ -762,9 +777,15 @@ class ImprovedMuteCog(commands.Cog):
         await ctx.send("An error occurred while executing the command.")
 
     def cog_unload(self):
+        """Cleanup when cog is unloaded."""
         try:
             self._startup_task.cancel()
             self._unmute_task.cancel()
+        except Exception:
+            pass
+        # Close MongoDB connection
+        try:
+            mongo.close()
         except Exception:
             pass
 

@@ -80,6 +80,9 @@ class DiscordBot(commands.Bot):
         self._shutdown_requested = False
         self._cleanup_task: Optional[asyncio.Task] = None
         
+        # Add logger for cogs to use
+        self.logger = logging.getLogger('discord.bot')
+        
         # Global cooldown mapping
         self._cd_mapping = commands.CooldownMapping.from_cooldown(1, 0.2, commands.BucketType.user)
         

@@ -240,6 +240,10 @@ class StickyMessages(commands.Cog):
     async def repost_sticky(self, channel, force=False):
         """Queue a sticky repost to prevent race conditions"""
         try:
+            # Validate channel has a guild (not a DM)
+            if not channel.guild:
+                return
+                
             # Check if there's actually a sticky configured
             sticky = await self.get_sticky(channel.guild.id, channel.id)
             if not sticky:
@@ -256,6 +260,10 @@ class StickyMessages(commands.Cog):
     async def on_message(self, message):
         """Repost sticky when user sends message"""
         if message.author.bot:
+            return
+        
+        # Only process guild messages (not DMs)
+        if not message.guild:
             return
             
         await self.repost_sticky(message.channel)
