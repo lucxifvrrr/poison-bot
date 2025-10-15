@@ -13,6 +13,8 @@ from pyfiglet import Figlet
 from discord import HTTPException
 import time
 from logging import StreamHandler
+import json
+import hashlib
 
 # Load environment variables
 load_dotenv()
@@ -24,19 +26,20 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 LOGS_DIR = "logs"
 DATABASE_DIR = "database"
 COGS_DIR = "cogs"
+COMMAND_CACHE_FILE = "database/command_sync_cache.json"
 
 def setup_directories() -> None:
     for directory in (LOGS_DIR, DATABASE_DIR, COGS_DIR):
         os.makedirs(directory, exist_ok=True)
 
 def setup_logging() -> None:
-    """Configure logging with file rotation - errors only."""
+    """Configure logging with file rotation."""
     os.makedirs(LOGS_DIR, exist_ok=True)
     
     logger = logging.getLogger()
-    logger.setLevel(logging.ERROR)
+    logger.setLevel(logging.INFO)
 
-    # File handler with rotation - errors only
+    # File handler with rotation
     file_handler = TimedRotatingFileHandler(
         os.path.join(LOGS_DIR, "bot.log"),
         when="midnight",
@@ -44,10 +47,16 @@ def setup_logging() -> None:
         encoding='utf-8',
         utc=True
     )
-    file_handler.setLevel(logging.ERROR)
+    file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
     
+    # Console handler for errors only
+    console_handler = StreamHandler()
+    console_handler.setLevel(logging.ERROR)
+    console_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+    
     logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
 
 def validate_environment() -> None:
     missing = []
@@ -90,10 +99,29 @@ class DiscordBot(commands.Bot):
         self._response_tracker: Set[str] = set()
         self._tracker_cleanup_time = time.time()
 
-        # Prefix command
+        # Prefix commands
         @self.command()
         async def ping(ctx):
             await ctx.send(f'<a:sukoon_greendot:1322894177775783997> Latency: {self.latency*1000:.2f}ms')
+        
+        @self.command()
+        @commands.is_owner()
+        async def sync(ctx):
+            """Manually sync slash commands (owner only)"""
+            try:
+                msg = await ctx.send("⏳ Syncing commands...")
+                synced = await self.tree.sync()
+                current_hash = self._get_command_hash()
+                self._save_sync_cache(current_hash, time.time())
+                await msg.edit(content=f"✅ Successfully synced {len(synced)} commands!")
+                logging.info(f"Manual sync triggered by {ctx.author}")
+            except HTTPException as e:
+                if e.status == 429:
+                    await msg.edit(content="❌ Rate limited! Please wait before syncing again.")
+                else:
+                    await msg.edit(content=f"❌ Sync failed: {e}")
+            except Exception as e:
+                await msg.edit(content=f"❌ Error: {e}")
 
     async def _should_respond(self, ctx) -> bool:
         """Check if bot should respond to prevent duplicates"""
@@ -140,31 +168,91 @@ class DiscordBot(commands.Bot):
             
         await self.invoke(ctx)
 
+    def _get_command_hash(self) -> str:
+        """Generate a hash of current command structure to detect changes."""
+        commands_data = []
+        for cmd in self.tree.get_commands():
+            cmd_dict = {
+                'name': cmd.name,
+                'description': cmd.description,
+                'options': str(cmd.parameters) if hasattr(cmd, 'parameters') else ''
+            }
+            commands_data.append(cmd_dict)
+        
+        # Sort for consistent hashing
+        commands_data.sort(key=lambda x: x['name'])
+        commands_str = json.dumps(commands_data, sort_keys=True)
+        return hashlib.md5(commands_str.encode()).hexdigest()
+    
+    def _load_sync_cache(self) -> dict:
+        """Load the last sync cache."""
+        try:
+            if os.path.exists(COMMAND_CACHE_FILE):
+                with open(COMMAND_CACHE_FILE, 'r') as f:
+                    return json.load(f)
+        except Exception as e:
+            logging.warning(f"Failed to load sync cache: {e}")
+        return {}
+    
+    def _save_sync_cache(self, command_hash: str, sync_time: float):
+        """Save the sync cache."""
+        try:
+            cache_data = {
+                'command_hash': command_hash,
+                'last_sync': sync_time
+            }
+            with open(COMMAND_CACHE_FILE, 'w') as f:
+                json.dump(cache_data, f)
+        except Exception as e:
+            logging.warning(f"Failed to save sync cache: {e}")
+
     async def setup_hook(self) -> None:
+        logging.info("Bot setup starting...")
         self.session = aiohttp.ClientSession()
         await self.load_cogs()
         self._cleanup_task = asyncio.create_task(self._periodic_cleanup())
         await asyncio.sleep(1)
 
-        # Sync slash commands
-        backoff = 1
-        max_retries = 3
-        retries = 0
+        # Smart command sync with caching
+        current_hash = self._get_command_hash()
+        cache = self._load_sync_cache()
+        last_hash = cache.get('command_hash')
+        last_sync = cache.get('last_sync', 0)
+        current_time = time.time()
         
-        while retries < max_retries:
+        # Minimum 5 minutes between sync attempts to avoid rate limits
+        time_since_last_sync = current_time - last_sync
+        min_sync_interval = 300  # 5 minutes
+        
+        # Only sync if:
+        # 1. Commands changed AND at least 5 minutes passed
+        # 2. OR it's been more than 1 hour (for periodic refresh)
+        should_sync = (
+            (current_hash != last_hash and time_since_last_sync > min_sync_interval) or 
+            time_since_last_sync > 3600
+        )
+        
+        if should_sync:
             try:
+                logging.info("Command changes detected, syncing...")
                 self._synced_commands = await self.tree.sync()
-                break
+                logging.info(f"Successfully synced {len(self._synced_commands)} slash commands")
+                self._save_sync_cache(current_hash, current_time)
             except HTTPException as e:
                 if e.status == 429:
-                    await asyncio.sleep(backoff)
-                    backoff = min(backoff * 2, 60)
+                    logging.warning(f"Rate limited. Commands will sync automatically later.")
+                    # Load from cache to show what we have
+                    self._synced_commands = self.tree.get_commands()
                 else:
                     logging.error(f"Failed to sync slash commands: {e}")
-                    retries += 1
-                    if retries >= max_retries:
-                        break
-                    await asyncio.sleep(backoff)
+            except Exception as e:
+                logging.error(f"Unexpected error during command sync: {e}")
+        else:
+            if time_since_last_sync < min_sync_interval:
+                logging.info(f"Skipping sync: Only {int(time_since_last_sync)}s since last sync (minimum: {min_sync_interval}s)")
+            else:
+                logging.info("Commands unchanged, skipping sync to avoid rate limits")
+            self._synced_commands = self.tree.get_commands()
 
     async def _periodic_cleanup(self) -> None:
         """Clean up resources periodically"""
@@ -186,12 +274,16 @@ class DiscordBot(commands.Bot):
         print("\033[2J\033[H")
         print_banner(self.user.name)
         print(f"\033[32mLogged in as {self.user.name} ({self.user.id})\033[0m")
-        print(f"\033[33mSynced {len(self._synced_commands)} slash commands\033[0m")
+        print(f"\033[33mLoaded {len(self._synced_commands)} slash commands\033[0m")
         
-        # Display synced slash command names
+        logging.info(f"Bot ready: {self.user.name} ({self.user.id})")
+        logging.info(f"Connected to {len(self.guilds)} guilds")
+        logging.info(f"Total commands available: {len(self._synced_commands)}")
+        
+        # Display slash command names
         if self._synced_commands:
             print("\033[36m" + "=" * 50 + "\033[0m")
-            print("\033[36mSynced Slash Commands:\033[0m")
+            print("\033[36mAvailable Slash Commands:\033[0m")
             for cmd in self._synced_commands:
                 print(f"  \033[32m/{cmd.name}\033[0m - {cmd.description}")
             print("\033[36m" + "=" * 50 + "\033[0m\n")
@@ -247,6 +339,7 @@ class DiscordBot(commands.Bot):
                 
                 try:
                     await self.load_extension(module)
+                    logging.info(f"Loaded cog: {module}")
                 except Exception as e:
                     logging.error(f"Failed to load cog {module}: {e}")
 
