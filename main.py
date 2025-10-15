@@ -194,12 +194,13 @@ class DiscordBot(commands.Bot):
             logging.warning(f"Failed to load sync cache: {e}")
         return {}
     
-    def _save_sync_cache(self, command_hash: str, sync_time: float):
+    def _save_sync_cache(self, command_hash: str, sync_time: float, rate_limited: bool = False):
         """Save the sync cache."""
         try:
             cache_data = {
                 'command_hash': command_hash,
-                'last_sync': sync_time
+                'last_sync': sync_time,
+                'rate_limited': rate_limited
             }
             with open(COMMAND_CACHE_FILE, 'w') as f:
                 json.dump(cache_data, f)
@@ -218,11 +219,19 @@ class DiscordBot(commands.Bot):
         cache = self._load_sync_cache()
         last_hash = cache.get('command_hash')
         last_sync = cache.get('last_sync', 0)
+        was_rate_limited = cache.get('rate_limited', False)
         current_time = time.time()
         
-        # Minimum 5 minutes between sync attempts to avoid rate limits
+        # Minimum intervals to avoid rate limits
         time_since_last_sync = current_time - last_sync
         min_sync_interval = 300  # 5 minutes
+        rate_limit_backoff = 900  # 15 minutes if previously rate limited
+        
+        # If we were rate limited last time, wait longer
+        if was_rate_limited and time_since_last_sync < rate_limit_backoff:
+            logging.info(f"Skipping sync: Previously rate limited. Wait {int(rate_limit_backoff - time_since_last_sync)}s more")
+            self._synced_commands = self.tree.get_commands()
+            return
         
         # Only sync if:
         # 1. Commands changed AND at least 5 minutes passed
@@ -237,11 +246,12 @@ class DiscordBot(commands.Bot):
                 logging.info("Command changes detected, syncing...")
                 self._synced_commands = await self.tree.sync()
                 logging.info(f"Successfully synced {len(self._synced_commands)} slash commands")
-                self._save_sync_cache(current_hash, current_time)
+                self._save_sync_cache(current_hash, current_time, rate_limited=False)
             except HTTPException as e:
                 if e.status == 429:
-                    logging.warning(f"Rate limited. Commands will sync automatically later.")
-                    # Load from cache to show what we have
+                    logging.warning(f"Rate limited! Commands will not sync for 15 minutes.")
+                    # Save that we were rate limited to prevent retries
+                    self._save_sync_cache(current_hash, current_time, rate_limited=True)
                     self._synced_commands = self.tree.get_commands()
                 else:
                     logging.error(f"Failed to sync slash commands: {e}")
