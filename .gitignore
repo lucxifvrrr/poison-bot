@@ -41,6 +41,7 @@ database/*.db
 database/*.json.backup
 database/*.db-shm
 database/*.db-wal
+database/*.db-shm
 # Archive files
 *.rar
 *.zip

@@ -1,13 +1,13 @@
 # Quarantine System
 
-A comprehensive quarantine/mute system with an integrated appeal system for Discord bots.
+A comprehensive quarantine/mute system with an integrated appeal system for Discord bots, optimized for servers of all sizes.
 
 ## Structure
 
 ```
 cogs/quarantine/
 ├── __init__.py           # Package initialization
-├── config.py             # Configuration and constants
+├── config.py            # Configuration and constants
 ├── quarantine_system.py  # Main quarantine/mute system
 ├── appeal_system.py      # Appeal system for punishments
 └── README.md            # This file
@@ -48,11 +48,33 @@ cogs/quarantine/
 - **Notifications**: Automatic notifications to users and moderators
 - **Integration**: Seamlessly integrates with quarantine system
 
-#### Commands
+#### Appeal Commands
 - `/appeal <case_id>` - Submit an appeal for a case
 - `/appeal-status [appeal_id]` - Check your appeal status
 - `/appeal-list` - [MOD] List all pending appeals
 - `/appeal-review <appeal_id>` - [MOD] Review a specific appeal
+
+## Large Server Optimizations
+
+### Dynamic Rate Limit Handling
+- Adaptive sleep times based on server size
+  - Small servers (<100 channels): 0.3s delay
+  - Large servers (100-200 channels): 0.4s delay
+  - Very large servers (>200 channels): 0.5s delay
+- Smart rate limit handling with retry mechanism
+- Random jitter to prevent thundering herd
+
+### Performance Estimates
+| Server Size | Channels | Estimated Time | Rate Limit Risk |
+|-------------|----------|----------------|-----------------|
+| Small       | <50      | 15-30 seconds  | Very Low        |
+| Medium      | 50-100   | 30-60 seconds  | Low             |
+| Large       | 100-200  | 1-2 minutes    | Low             |
+
+### Error Recovery
+- Exponential backoff for non-429 HTTP errors
+- Graceful degradation with failed channel tracking
+- Ability to retry failed channels using `/reapply-mute-perms`
 
 ## Configuration
 
@@ -98,39 +120,3 @@ APPEAL_REVIEW_TIMEOUT_DAYS = 7      # Days before appeal expires
 - **Manage Messages** - For jail message management
 - **Send Messages** - To send notifications
 - **Embed Links** - For rich embeds
-
-## Workflow
-
-1. **Mute User**: Moderator uses `!qmute @user 1h spam`
-2. **User Receives DM**: User gets notification with case ID
-3. **User Appeals**: User runs `/appeal <case_id>` and fills modal
-4. **Moderator Notified**: Appeal appears in punishment-logs with review buttons
-5. **Review**: Moderator clicks Approve/Deny button
-6. **Auto-Unmute**: If approved, user is automatically unmuted
-7. **User Notified**: User receives DM with appeal result
-
-## Modern Features
-
-- ✅ Discord UI Components (Modals, Buttons, Select Menus)
-- ✅ Slash Commands
-- ✅ Rich Embeds with Timestamps
-- ✅ Atomic Database Operations
-- ✅ Background Tasks for Automation
-- ✅ Comprehensive Error Handling
-- ✅ Logging Integration
-- ✅ Rate Limit Protection
-- ✅ Cooldown Management
-- ✅ TTL Indexes for Auto-Cleanup
-
-## Integration with Existing Bot
-
-The bot's `load_cogs()` method automatically discovers and loads cogs from subdirectories, so no changes to `main.py` are needed. Both cogs will be loaded automatically on bot startup.
-
-## Notes
-
-- Appeals can only be submitted for active cases
-- Users can only appeal their own cases
-- Only one pending appeal per user at a time
-- Appeals expire after 7 days if not reviewed
-- 24-hour cooldown between appeal submissions
-- Moderators need `manage_messages` permission or the configured mod role

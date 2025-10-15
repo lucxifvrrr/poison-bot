@@ -2,7 +2,7 @@
 
 ![Banner](template.gif)
 
-# 🤖 Discord Bot - Feature-Rich Server Management
+# 🤖 Poison Bot - Feature-Rich Discord Server Management
 
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![Discord.py](https://img.shields.io/badge/discord.py-2.0+-blue.svg)](https://github.com/Rapptz/discord.py)
@@ -153,8 +153,8 @@ This is a comprehensive Discord bot built with discord.py, featuring a modular c
 
 ### Step 1: Clone the Repository
 ```bash
-git clone https://github.com/apunlegendhai/New-folder--2-.git
-cd New-folder--2-
+git clone https://github.com/lucxifvrrr/poison-bot.git
+cd poison-bot
 ```
 
 ### Step 2: Install Dependencies
@@ -220,10 +220,11 @@ The bot requires the following intents:
 └── .gitignore        # Git ignore rules
 ```
 
-## 📝 Commands
+### 📝 Commands
 
 ### Prefix Commands
-- `.ping` - Check bot latency and response time
+- `.ping` - Check bot latency and response time (Shows green dot status with ms)
+- `.sync` - Manually sync slash commands (Owner only)
 
 ### Slash Commands
 The bot includes numerous slash commands across all cogs. Use `/` in Discord to see all available commands with descriptions.
@@ -284,12 +285,14 @@ The bot uses a modular architecture where each feature is implemented as a separ
 
 | Feature | Description |
 |---------|-------------|
-| ⏱️ **Global Cooldown System** | Prevents command spam with intelligent rate limiting |
-| 🚫 **Duplicate Response Prevention** | Avoids double responses with tracking system |
+| ⏱️ **Global Cooldown System** | Prevents command spam with intelligent rate limiting (1 command per 0.2s per user) |
+| 🚫 **Duplicate Response Prevention** | Avoids double responses with tracking system (5-minute cleanup interval) |
 | 📡 **Automatic Error Reporting** | Webhook-based error notifications for monitoring |
 | 🛑 **Graceful Shutdown** | Proper cleanup on exit with signal handlers |
 | 🧹 **Periodic Resource Cleanup** | Automatic memory management every 5 minutes |
 | 📝 **Rotating Log Files** | Automatic log rotation with 7-day retention |
+| 🔄 **Smart Command Sync** | Efficient command sync with rate limit handling and caching |
+| 🎨 **Pretty Terminal Output** | Colorful terminal display with command listing and status |
 
 ## 🛠️ Development
 
@@ -374,7 +377,7 @@ If you encounter any bugs or issues, please:
 | Method | Link |
 |--------|------|
 | 📖 **Documentation** | Check the README and code comments |
-| 🐛 **Bug Reports** | [Open an Issue](https://github.com/apunlegendhai/New-folder--2-/issues) |
+| 🐛 **Bug Reports** | [Open an Issue](https://github.com/lucxifvrrr/poison-bot/issues) |
 
 ## 🙏 Acknowledgments
 
@@ -404,15 +407,15 @@ If you encounter any bugs or issues, please:
 
 <br>
 
-![GitHub stars](https://img.shields.io/github/stars/apunlegendhai/New-folder--2-?style=social)
-![GitHub forks](https://img.shields.io/github/forks/apunlegendhai/New-folder--2-?style=social)
-![GitHub watchers](https://img.shields.io/github/watchers/apunlegendhai/New-folder--2-?style=social)
+[![GitHub stars](https://img.shields.io/github/stars/lucxifvrrr/poison-bot?style=social)
+![GitHub forks](https://img.shields.io/github/forks/lucxifvrrr/poison-bot?style=social)
+![GitHub watchers](https://img.shields.io/github/watchers/lucxifvrrr/poison-bot?style=social)
 
 <br>
 
 ### Made with ❤️ and ☕ by **.lucxifvr**
 
-[![GitHub](https://img.shields.io/badge/GitHub-.lucxifvr-181717?style=for-the-badge&logo=github)](https://github.com/apunlegendhai)
+[![GitHub](https://img.shields.io/badge/GitHub-.lucxifvr-181717?style=for-the-badge&logo=github)](https://github.com/lucxifvrrr)
 
 *Crafting powerful Discord bots, one commit at a time* ✨
 

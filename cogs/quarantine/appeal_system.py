@@ -12,7 +12,9 @@ from typing import Optional, List, Dict, Tuple
 
 from .config import (
     AppealStatus, AppealType, Colors,
-    APPEAL_COOLDOWN_HOURS, MAX_APPEAL_LENGTH, APPEAL_REVIEW_TIMEOUT_DAYS
+    APPEAL_COOLDOWN_HOURS, MAX_APPEAL_LENGTH, MIN_APPEAL_LENGTH, APPEAL_REVIEW_TIMEOUT_DAYS,
+    APPEAL_REASON_PLACEHOLDER, APPEAL_ADDITIONAL_INFO_PLACEHOLDER,
+    AppealEmojis, AppealTitles, EmbedDescriptions, FooterMessages
 )
 
 load_dotenv()
@@ -53,22 +55,29 @@ def utc_now():
     return datetime.now(timezone.utc)
 
 
+def safe_timestamp(dt: datetime) -> int:
+    """Safely convert datetime to timestamp, handling naive datetimes."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.timestamp())
+
+
 class AppealModal(discord.ui.Modal, title="Submit Appeal"):
     """Modal for submitting an appeal."""
     
     appeal_reason = discord.ui.TextInput(
         label="Why should your punishment be removed?",
         style=discord.TextStyle.paragraph,
-        placeholder="Explain why you believe your punishment should be lifted...",
+        placeholder=APPEAL_REASON_PLACEHOLDER,
         required=True,
         max_length=MAX_APPEAL_LENGTH,
-        min_length=50
+        min_length=MIN_APPEAL_LENGTH
     )
     
     additional_info = discord.ui.TextInput(
         label="Additional Information (Optional)",
         style=discord.TextStyle.paragraph,
-        placeholder="Any additional context or information...",
+        placeholder=APPEAL_ADDITIONAL_INFO_PLACEHOLDER,
         required=False,
         max_length=500
     )
@@ -243,7 +252,12 @@ class AppealSystem(commands.Cog):
         })
         
         if recent:
-            time_left = (recent["created_at"] + timedelta(hours=APPEAL_COOLDOWN_HOURS) - utc_now()).total_seconds()
+            # Ensure created_at is timezone-aware
+            created_at = recent["created_at"]
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            
+            time_left = (created_at + timedelta(hours=APPEAL_COOLDOWN_HOURS) - utc_now()).total_seconds()
             hours = int(time_left // 3600)
             minutes = int((time_left % 3600) // 60)
             return False, f"You must wait {hours}h {minutes}m before submitting another appeal."
@@ -469,25 +483,9 @@ class AppealSystem(commands.Cog):
             reviewer = await self.bot.fetch_user(reviewer_id)
             
             if status == AppealStatus.APPROVED:
-                dm_text = (
-                    f"✅ **Appeal Approved**\n\n"
-                    f"Your appeal for Case #{appeal['case_id']} has been **approved**!\n\n"
-                    f"🎉 **Result:** Your punishment has been lifted.\n"
-                    f"🏢 **Server:** {guild.name}\n"
-                    f"📋 **Appeal ID:** #{appeal['appeal_id']}\n"
-                    f"🛡️ **Reviewed By:** {reviewer}\n\n"
-                    f"_Reviewed at {utc_now().strftime('%Y-%m-%d %H:%M UTC')}_"
-                )
+                dm_text = f"✅ **Appeal Approved** • {guild.name} • Case #{appeal['case_id']} • Your punishment has been lifted"
             else:
-                dm_text = (
-                    f"❌ **Appeal Denied**\n\n"
-                    f"Your appeal for Case #{appeal['case_id']} has been **denied**.\n\n"
-                    f"📋 **Note:** Your punishment remains in effect. You may submit another appeal after the cooldown period.\n"
-                    f"🏢 **Server:** {guild.name}\n"
-                    f"📋 **Appeal ID:** #{appeal['appeal_id']}\n"
-                    f"🛡️ **Reviewed By:** {reviewer}\n\n"
-                    f"_Reviewed at {utc_now().strftime('%Y-%m-%d %H:%M UTC')}_"
-                )
+                dm_text = f"❌ **Appeal Denied** • {guild.name} • Case #{appeal['case_id']} • Punishment remains in effect"
             
             dm = await user.create_dm()
             await dm.send(content=dm_text)
@@ -522,7 +520,7 @@ class AppealSystem(commands.Cog):
         
         embed.add_field(name="👤 User", value=f"{user.mention}\n`{user}`", inline=True)
         embed.add_field(name="📋 Case ID", value=f"#{appeal['case_id']}", inline=True)
-        embed.add_field(name="📅 Submitted", value=f"<t:{int(appeal['created_at'].timestamp())}:R>", inline=True)
+        embed.add_field(name="📅 Submitted", value=f"<t:{safe_timestamp(appeal['created_at'])}:R>", inline=True)
         
         if case:
             embed.add_field(
@@ -549,7 +547,7 @@ class AppealSystem(commands.Cog):
             embed.add_field(name="🛡️ Reviewed By", value=f"{reviewer.mention}", inline=True)
             embed.add_field(
                 name="📅 Reviewed At",
-                value=f"<t:{int(appeal['reviewed_at'].timestamp())}:R>",
+                value=f"<t:{safe_timestamp(appeal['reviewed_at'])}:R>",
                 inline=True
             )
         
@@ -679,7 +677,7 @@ class AppealSystem(commands.Cog):
                 
                 embed.add_field(
                     name=f"{status_emoji} Appeal #{appeal['appeal_id']} - Case #{appeal['case_id']}",
-                    value=f"**Status:** {appeal['status'].title()}\n**Submitted:** <t:{int(appeal['created_at'].timestamp())}:R>",
+                    value=f"**Status:** {appeal['status'].title()}\n**Submitted:** <t:{safe_timestamp(appeal['created_at'])}:R>",
                     inline=False
                 )
             
@@ -713,7 +711,7 @@ class AppealSystem(commands.Cog):
             user = await self.bot.fetch_user(appeal["user_id"])
             embed.add_field(
                 name=f"Appeal #{appeal['appeal_id']} - Case #{appeal['case_id']}",
-                value=f"**User:** {user.mention}\n**Submitted:** <t:{int(appeal['created_at'].timestamp())}:R>\n**Reason:** {appeal['reason'][:100]}...",
+                value=f"**User:** {user.mention}\n**Submitted:** <t:{safe_timestamp(appeal['created_at'])}:R>\n**Reason:** {appeal['reason'][:100]}...",
                 inline=False
             )
         

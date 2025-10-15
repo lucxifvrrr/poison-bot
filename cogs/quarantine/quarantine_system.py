@@ -12,6 +12,16 @@ from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Tuple, Dict
 
+# Import configuration
+from .config import (
+    MUTED_ROLE_NAME, JAIL_CHANNEL_NAME, LOG_CHANNEL_NAME,
+    DM_AUTO_DELETE_MINUTES, DM_REASON_MAX_LENGTH,
+    PERMISSION_BASE_SLEEP, PERMISSION_LARGE_SERVER_SLEEP, PERMISSION_HUGE_SERVER_SLEEP,
+    PERMISSION_MAX_RETRIES, LARGE_SERVER_THRESHOLD, HUGE_SERVER_THRESHOLD,
+    JAIL_WELCOME_MESSAGE, Colors,
+    QuarantineEmojis, QuarantineTitles, EmbedDescriptions, FooterMessages
+)
+
 load_dotenv()
 MONGO_URL = os.getenv("MONGO_URL")
 if not MONGO_URL:
@@ -70,6 +80,13 @@ def parse_duration(s: str) -> Optional[timedelta]:
 
 def utc_now():
     return datetime.now(timezone.utc)
+
+
+def safe_timestamp(dt: datetime) -> int:
+    """Safely convert datetime to timestamp, handling naive datetimes."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.timestamp())
 
 
 class AppealButton(discord.ui.View):
@@ -265,8 +282,8 @@ class ImprovedMuteCog(commands.Cog):
         guild: discord.Guild,
         muted_role: discord.Role,
         jail_channel_id: int,
-        base_sleep: float = 0.25,
-        max_retries: int = 3,
+        base_sleep: float = PERMISSION_BASE_SLEEP,
+        max_retries: int = PERMISSION_MAX_RETRIES,
     ):
         """Apply overwrites to categories first (inheritance), then leaf channels, with backoff."""
         ok, why = self._has_overwrite_perms(guild)
@@ -277,6 +294,13 @@ class ImprovedMuteCog(commands.Cog):
         channels = list(guild.channels)
         categories = [c for c in channels if isinstance(c, discord.CategoryChannel)]
         others = [c for c in channels if isinstance(c, (discord.TextChannel, discord.VoiceChannel, discord.StageChannel, discord.ForumChannel))]
+
+        # Adjust sleep time based on server size to avoid rate limits
+        total_channels = len(channels)
+        if total_channels > HUGE_SERVER_THRESHOLD:
+            base_sleep = PERMISSION_HUGE_SERVER_SLEEP  # Slower for very large servers
+        elif total_channels > LARGE_SERVER_THRESHOLD:
+            base_sleep = PERMISSION_LARGE_SERVER_SLEEP  # Moderate for large servers
 
         async def apply_one(ch: discord.abc.GuildChannel):
             allow_in_jail = ch.id == jail_channel_id
@@ -299,10 +323,15 @@ class ImprovedMuteCog(commands.Cog):
                         )
                     await asyncio.sleep(base_sleep)
                     return
-                except discord.HTTPException:
-                    # exponential backoff with jitter
-                    backoff = min(4.0, (2 ** (attempt - 1)) * base_sleep) + random.uniform(0, 0.25)
-                    await asyncio.sleep(backoff)
+                except discord.HTTPException as e:
+                    # Check if it's a rate limit error
+                    if e.status == 429:
+                        retry_after = getattr(e, 'retry_after', 2.0)
+                        await asyncio.sleep(retry_after + random.uniform(0.5, 1.5))
+                    else:
+                        # exponential backoff with jitter for other HTTP errors
+                        backoff = min(5.0, (2 ** (attempt - 1)) * base_sleep) + random.uniform(0, 0.5)
+                        await asyncio.sleep(backoff)
                 except Exception:
                     break
             failed.append(getattr(ch, "name", str(ch.id)))
@@ -310,8 +339,10 @@ class ImprovedMuteCog(commands.Cog):
         # categories then others; guard with per-guild lock to avoid concurrent sweeps
         lock = self._overwrite_locks.setdefault(guild.id, asyncio.Lock())
         async with lock:
+            # Apply to categories first (they inherit to child channels)
             for ch in categories:
                 await apply_one(ch)
+            # Then apply to individual channels
             for ch in others:
                 await apply_one(ch)
 
@@ -330,36 +361,51 @@ class ImprovedMuteCog(commands.Cog):
             return
 
         await interaction.response.defer(thinking=True, ephemeral=True)
+        
+        # Check server size and warn if large
+        channel_count = len(guild.channels)
+        is_large_server = channel_count > LARGE_SERVER_THRESHOLD
+        
         try:
-            muted_role = discord.utils.get(guild.roles, name="Muted")
+            muted_role = discord.utils.get(guild.roles, name=MUTED_ROLE_NAME)
             if muted_role is None:
-                muted_role = await guild.create_role(name="Muted", reason="Mute system setup")
+                muted_role = await guild.create_role(name=MUTED_ROLE_NAME, reason="Mute system setup")
 
-            jail_name = "jail"
-            jail_channel = discord.utils.get(guild.text_channels, name=jail_name)
+            jail_channel = discord.utils.get(guild.text_channels, name=JAIL_CHANNEL_NAME)
             if jail_channel is None:
                 overwrites = {
                     guild.default_role: discord.PermissionOverwrite(view_channel=False),
                     muted_role: discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=False),
                     guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_messages=True),
                 }
-                jail_channel = await guild.create_text_channel(jail_name, overwrites=overwrites, reason="Jail for muted members")
+                jail_channel = await guild.create_text_channel(JAIL_CHANNEL_NAME, overwrites=overwrites, reason="Jail for muted members")
                 try:
-                    await jail_channel.send("You have been muted. Please wait for staff to review your case.")
+                    await jail_channel.send(JAIL_WELCOME_MESSAGE)
                 except Exception:
                     pass
 
-            log_name = "punishment-logs"
-            log_channel = discord.utils.get(guild.text_channels, name=log_name)
+            log_channel = discord.utils.get(guild.text_channels, name=LOG_CHANNEL_NAME)
             if log_channel is None:
                 overwrites = {
                     guild.default_role: discord.PermissionOverwrite(view_channel=False),
                     guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
                 }
                 if category:
-                    log_channel = await guild.create_text_channel(log_name, category=category, overwrites=overwrites, reason="Logs for mute/unmute")
+                    log_channel = await guild.create_text_channel(LOG_CHANNEL_NAME, category=category, overwrites=overwrites, reason="Logs for mute/unmute")
                 else:
-                    log_channel = await guild.create_text_channel(log_name, overwrites=overwrites, reason="Logs for mute/unmute")
+                    log_channel = await guild.create_text_channel(LOG_CHANNEL_NAME, overwrites=overwrites, reason="Logs for mute/unmute")
+
+            # Send progress update for large servers
+            if is_large_server:
+                try:
+                    await interaction.followup.send(
+                        f"⏳ **Large server detected** ({channel_count} channels)\n"
+                        f"Applying permissions... This may take a few minutes.\n"
+                        f"_You'll receive a notification when complete._",
+                        ephemeral=True
+                    )
+                except:
+                    pass
 
             # apply overwrites across categories then channels
             failed = await self._apply_muted_overwrites(guild, muted_role, jail_channel.id)
@@ -379,20 +425,48 @@ class ImprovedMuteCog(commands.Cog):
             embed = discord.Embed(
                 title="✅ Mute System Setup Complete",
                 description="The quarantine system has been successfully configured!",
-                color=0x51CF66,
+                color=Colors.SUCCESS,
                 timestamp=utc_now()
             )
             embed.add_field(name="🔇 Muted Role", value=muted_role.mention, inline=True)
             embed.add_field(name="🔒 Jail Channel", value=jail_channel.mention, inline=True)
             embed.add_field(name="📝 Log Channel", value=log_channel.mention, inline=True)
-            if failed:
+            
+            # Add statistics for large servers
+            if is_large_server:
+                success_count = channel_count - len(failed)
                 embed.add_field(
-                    name="⚠️ Warnings",
-                    value=f"Could not update permissions for: {', '.join(failed[:10])}",
+                    name="📊 Statistics",
+                    value=f"**Channels:** {channel_count}\n**Updated:** {success_count}\n**Failed:** {len(failed)}",
                     inline=False
                 )
+            
+            if failed:
+                failed_list = ', '.join(failed[:10])
+                if len(failed) > 10:
+                    failed_list += f" _(+{len(failed) - 10} more)_"
+                embed.add_field(
+                    name="⚠️ Warnings",
+                    value=f"Could not update permissions for: {failed_list}",
+                    inline=False
+                )
+                embed.add_field(
+                    name="💡 Tip",
+                    value="Use `/reapply-mute-perms` to retry failed channels later.",
+                    inline=False
+                )
+            
             embed.set_footer(text=f"Setup by {interaction.user}", icon_url=interaction.user.display_avatar.url)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+            # Try to send via followup, fallback to DM if interaction expired
+            try:
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            except discord.NotFound:
+                # Interaction expired (15 min timeout), send DM instead
+                try:
+                    await interaction.user.send(f"Setup complete for **{guild.name}**!", embed=embed)
+                except:
+                    pass
         except Exception as e:
             await interaction.followup.send("An error occurred during setup. Check bot permissions and try again.", ephemeral=True)
             if self.logger:
@@ -433,7 +507,7 @@ class ImprovedMuteCog(commands.Cog):
             embed = discord.Embed(
                 title="⚠️ Configuration Issues Found",
                 description="The following problems were detected with your mute system:",
-                color=0xFF6B6B,
+                color=Colors.ERROR,
                 timestamp=utc_now()
             )
             for i, p in enumerate(problems, 1):
@@ -444,7 +518,7 @@ class ImprovedMuteCog(commands.Cog):
             embed = discord.Embed(
                 title="✅ Configuration Check Passed",
                 description="All basic configuration checks passed successfully!",
-                color=0x51CF66,
+                color=Colors.SUCCESS,
                 timestamp=utc_now()
             )
             embed.add_field(name="🔇 Muted Role", value="✓ Configured", inline=True)
@@ -500,7 +574,7 @@ class ImprovedMuteCog(commands.Cog):
         embed = discord.Embed(
             title="✅ Permissions Reapplied",
             description="Muted role overwrites have been reapplied across all categories and channels.",
-            color=0x51CF66,
+            color=Colors.SUCCESS,
             timestamp=utc_now()
         )
         if failed:
@@ -509,7 +583,7 @@ class ImprovedMuteCog(commands.Cog):
                 value=f"Could not update: {', '.join(failed[:10])}",
                 inline=False
             )
-            embed.color = 0xFFD93D
+            embed.color = Colors.WARNING
         else:
             embed.add_field(name="📊 Status", value="All channels updated successfully", inline=False)
         embed.set_footer(text=f"Requested by {interaction.user}", icon_url=interaction.user.display_avatar.url)
@@ -527,7 +601,7 @@ class ImprovedMuteCog(commands.Cog):
         embed = discord.Embed(
             title="✅ Moderator Role Updated",
             description=f"The moderator role has been set to {role.mention}",
-            color=0x51CF66,
+            color=Colors.SUCCESS,
             timestamp=utc_now()
         )
         embed.add_field(name="🛡️ Role", value=role.mention, inline=True)
@@ -669,28 +743,23 @@ class ImprovedMuteCog(commands.Cog):
                 # Build expiry text
                 if expires_at:
                     try:
-                        timestamp = int(expires_at.timestamp())
+                        timestamp = safe_timestamp(expires_at)
                         expiry_text = f"<t:{timestamp}:R>"
                     except (AttributeError, ValueError, OSError):
                         expiry_text = "Manual unmute"
                 else:
                     expiry_text = "Manual unmute"
                 
-                # Create simple text message
-                dm_text = (
-                    f"🔇 **You've been muted in {guild.name}**\n\n"
-                    f"📋 **Case:** #{case}\n"
-                    f"⏰ **Expires:** {expiry_text}\n"
-                    f"📝 **Reason:** {reason[:200] if len(reason) <= 200 else f'{reason[:197]}...'}\n\n"
-                    f"_Click the button below to submit an appeal • This message auto-deletes in 10 minutes_"
-                )
+                # Create compact single-line message
+                reason_short = reason[:DM_REASON_MAX_LENGTH] if len(reason) <= DM_REASON_MAX_LENGTH else f"{reason[:DM_REASON_MAX_LENGTH-3]}..."
+                dm_text = f"🔇 **Muted in {guild.name}** • Case #{case} • Expires {expiry_text} • {reason_short}"
                 
                 # Create appeal button view
                 view = AppealButton(guild.id, case)
                 dm_msg = await dm.send(content=dm_text, view=view)
                 
-                # persist deletion: schedule delete in 10 minutes
-                expires = utc_now() + timedelta(minutes=10)
+                # persist deletion: schedule delete in configured minutes
+                expires = utc_now() + timedelta(minutes=DM_AUTO_DELETE_MINUTES)
                 ins = pending_dm_deletes.insert_one({
                     "guild_id": guild.id,
                     "user_id": member.id,
@@ -698,7 +767,7 @@ class ImprovedMuteCog(commands.Cog):
                     "expires_at": expires
                 })
                 # schedule in-memory deletion too
-                self.bot.loop.create_task(self._schedule_delete_dm(ins.inserted_id, 10 * 60))
+                self.bot.loop.create_task(self._schedule_delete_dm(ins.inserted_id, DM_AUTO_DELETE_MINUTES * 60))
                 dm_was_sent = True
             except Exception:
                 dm_was_sent = False
@@ -707,7 +776,7 @@ class ImprovedMuteCog(commands.Cog):
         embed = discord.Embed(
             title=f"🔇 Member Muted — Case #{case}",
             description=f"**{member.mention}** has been muted and moved to the quarantine zone.",
-            color=0xFF6B6B,
+            color=Colors.MUTE,
             timestamp=utc_now()
         )
         try:
@@ -720,7 +789,7 @@ class ImprovedMuteCog(commands.Cog):
         embed.add_field(name="📋 Reason", value=f"```{reason[:1000]}```", inline=False)
         if expires_at:
             try:
-                timestamp = int(expires_at.timestamp())
+                timestamp = safe_timestamp(expires_at)
                 embed.add_field(name="⏰ Expires", value=f"<t:{timestamp}:F>\n<t:{timestamp}:R>", inline=False)
             except (AttributeError, ValueError, OSError):
                 embed.add_field(name="⏰ Expires", value=str(expires_at), inline=False)
@@ -747,14 +816,14 @@ class ImprovedMuteCog(commands.Cog):
         confirm_embed = discord.Embed(
             title="✅ Member Muted Successfully",
             description=f"{member.mention} has been muted and moved to {jail_ch.mention}",
-            color=0x51CF66,
+            color=Colors.SUCCESS,
             timestamp=utc_now()
         )
         confirm_embed.add_field(name="📋 Case ID", value=f"#{case}", inline=True)
         confirm_embed.add_field(name="👤 Member", value=member.mention, inline=True)
         if expires_at:
             try:
-                timestamp = int(expires_at.timestamp())
+                timestamp = safe_timestamp(expires_at)
                 confirm_embed.add_field(name="⏰ Expires", value=f"<t:{timestamp}:R>", inline=True)
             except (AttributeError, ValueError, OSError):
                 pass
@@ -834,7 +903,7 @@ class ImprovedMuteCog(commands.Cog):
         embed = discord.Embed(
             title=f"🔊 Member Unmuted — Case #{case}",
             description=f"**{member.mention}** has been unmuted and can now access the server.",
-            color=0x51CF66,
+            color=Colors.UNMUTE,
             timestamp=utc_now()
         )
         try:
@@ -847,7 +916,7 @@ class ImprovedMuteCog(commands.Cog):
         muted_at = doc.get("muted_at")
         if muted_at and isinstance(muted_at, datetime):
             try:
-                timestamp = int(muted_at.timestamp())
+                timestamp = safe_timestamp(muted_at)
                 embed.add_field(name="📅 Originally Muted", value=f"<t:{timestamp}:F>", inline=False)
             except (AttributeError, ValueError, OSError):
                 pass
@@ -866,11 +935,7 @@ class ImprovedMuteCog(commands.Cog):
         # DM user quietly
         try:
             dm = await member.create_dm()
-            dm_text = (
-                f"🔊 **You've been unmuted in {guild.name}**\n\n"
-                f"📋 **Case:** #{case}\n\n"
-                f"_You can now access all server channels again_"
-            )
+            dm_text = f"🔊 **Unmuted in {guild.name}** • Case #{case}"
             await dm.send(content=dm_text)
         except Exception:
             pass
@@ -878,7 +943,7 @@ class ImprovedMuteCog(commands.Cog):
         confirm_embed = discord.Embed(
             title="✅ Member Unmuted Successfully",
             description=f"{member.mention} has been unmuted and can now access the server.",
-            color=0x51CF66,
+            color=Colors.SUCCESS,
             timestamp=utc_now()
         )
         confirm_embed.add_field(name="📋 Case ID", value=f"#{case}", inline=True)
@@ -924,12 +989,12 @@ class ImprovedMuteCog(commands.Cog):
                 field_value += f"**Reason:** {reason[:100]}\n"
                 if isinstance(at, datetime):
                     try:
-                        field_value += f"**Muted:** <t:{int(at.timestamp())}:R>\n"
+                        field_value += f"**Muted:** <t:{safe_timestamp(at)}:R>\n"
                     except (AttributeError, ValueError, OSError):
                         pass
                 if isinstance(expires, datetime):
                     try:
-                        field_value += f"**Expires:** <t:{int(expires.timestamp())}:R>"
+                        field_value += f"**Expires:** <t:{safe_timestamp(expires)}:R>"
                     except (AttributeError, ValueError, OSError):
                         field_value += f"**Expires:** ⚠️ Manual unmute required"
                 else:
@@ -969,7 +1034,7 @@ class ImprovedMuteCog(commands.Cog):
         embed = discord.Embed(
             title="🧹 Database Cleanup Complete",
             description=f"Cleared old inactive mute records from the database.",
-            color=0x51CF66,
+            color=Colors.SUCCESS,
             timestamp=utc_now()
         )
         embed.add_field(name="📊 Records Deleted", value=f"**{res.deleted_count}** records", inline=True)
@@ -1037,7 +1102,7 @@ class ImprovedMuteCog(commands.Cog):
             content = d.get("content", "")[:200]
             if isinstance(ts, datetime):
                 try:
-                    time_str = f"<t:{int(ts.timestamp())}:R>"
+                    time_str = f"<t:{safe_timestamp(ts)}:R>"
                 except (AttributeError, ValueError, OSError):
                     time_str = str(ts)
             else:
@@ -1099,7 +1164,7 @@ class ImprovedMuteCog(commands.Cog):
         embed = discord.Embed(
             title=f"📋 Case #{case_id} — {status_text}",
             description=f"Detailed information for mute case **#{case_id}**",
-            color=0xFF6B6B if active else 0x51CF66,
+            color=Colors.MUTE if active else Colors.UNMUTE,
             timestamp=utc_now()
         )
         embed.add_field(name="👤 Member", value=member_repr, inline=True)
@@ -1108,7 +1173,7 @@ class ImprovedMuteCog(commands.Cog):
         embed.add_field(name="📋 Reason", value=f"```{reason[:1000]}```", inline=False)
         if isinstance(muted_at, datetime):
             try:
-                timestamp = int(muted_at.timestamp())
+                timestamp = safe_timestamp(muted_at)
                 embed.add_field(name="📅 Muted At", value=f"<t:{timestamp}:F>\n<t:{timestamp}:R>", inline=True)
             except (AttributeError, ValueError, OSError):
                 embed.add_field(name="📅 Muted At", value=muted_at_s, inline=True)
@@ -1118,7 +1183,7 @@ class ImprovedMuteCog(commands.Cog):
             exp_ts = doc["expires_at"]
             if isinstance(exp_ts, datetime):
                 try:
-                    timestamp = int(exp_ts.timestamp())
+                    timestamp = safe_timestamp(exp_ts)
                     embed.add_field(name="⏰ Expires At", value=f"<t:{timestamp}:F>\n<t:{timestamp}:R>", inline=True)
                 except (AttributeError, ValueError, OSError):
                     embed.add_field(name="⏰ Duration", value="⚠️ Manual unmute", inline=True)
@@ -1130,7 +1195,7 @@ class ImprovedMuteCog(commands.Cog):
             unmute_ts = doc["unmuted_at"]
             if isinstance(unmute_ts, datetime):
                 try:
-                    timestamp = int(unmute_ts.timestamp())
+                    timestamp = safe_timestamp(unmute_ts)
                     embed.add_field(name="✅ Unmuted At", value=f"<t:{timestamp}:F>\n<t:{timestamp}:R>", inline=True)
                 except (AttributeError, ValueError, OSError):
                     pass
@@ -1196,7 +1261,7 @@ class ImprovedMuteCog(commands.Cog):
                         embed = discord.Embed(
                             title=f"🔊 Auto-Unmute — Case #{case_id}",
                             description=f"Temporary mute has expired and been automatically removed.",
-                            color=0x51CF66,
+            color=Colors.UNMUTE,
                             timestamp=utc_now()
                         )
                         uid = doc.get("user_id")
@@ -1206,7 +1271,7 @@ class ImprovedMuteCog(commands.Cog):
                         muted_at = doc.get("muted_at")
                         if muted_at and isinstance(muted_at, datetime):
                             try:
-                                timestamp = int(muted_at.timestamp())
+                                timestamp = safe_timestamp(muted_at)
                                 embed.add_field(name="📅 Originally Muted", value=f"<t:{timestamp}:R>", inline=False)
                             except (AttributeError, ValueError, OSError):
                                 pass
