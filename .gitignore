@@ -39,7 +39,7 @@ Thumbs.db
 # Discord bot specific
 database/*.db
 database/*.json.backup
-
+database/*.db*
 # Archive files
 *.rar
 *.zip
